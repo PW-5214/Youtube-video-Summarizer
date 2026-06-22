@@ -12,6 +12,6 @@ lxml
 
 youtube-transcript-api
 yt-dlp
-
+pytube
 unstructured
 numexpr
