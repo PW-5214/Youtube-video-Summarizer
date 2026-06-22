@@ -1,7 +1,6 @@
 import streamlit as st
 import validators
 import os
-import yt_dlp
 
 from langchain_core.prompts import PromptTemplate
 from langchain_groq import ChatGroq
@@ -11,10 +10,9 @@ from langchain_community.document_loaders import (
     YoutubeLoader
 )
 from langchain_core.documents import Document
-
+from pytube import YouTube
 
 os.environ["USER_AGENT"] = "Mozilla/5.0"
-
 
 st.set_page_config(
     page_title="YT + Website Summarizer",
@@ -22,6 +20,7 @@ st.set_page_config(
 )
 
 st.title("🦜 Summarize YouTube or Website Content")
+st.subheader("Enter a Website or YouTube URL")
 
 with st.sidebar:
     groq_api_key = st.text_input(
@@ -31,60 +30,32 @@ with st.sidebar:
 
 generic_url = st.text_input("Enter URL")
 
-
-prompt = PromptTemplate(
-    input_variables=["text"],
-    template="""
-Provide a concise summary.
+prompt_template = """
+Provide a clear and concise summary.
 
 Rules:
 - Maximum 300 words
-- Pointwise
+- Use pointwise format
+- Keep important details
 - Easy to understand
 
 Content:
 {text}
 """
+
+prompt = PromptTemplate(
+    input_variables=["text"],
+    template=prompt_template
 )
-
-
-def get_youtube_description(url):
-
-    opts = {
-        "quiet": True,
-        "extract_flat": False
-    }
-
-    with yt_dlp.YoutubeDL(opts) as ydl:
-
-        info = ydl.extract_info(
-            url,
-            download=False
-        )
-
-        title = info.get(
-            "title",
-            ""
-        )
-
-        description = info.get(
-            "description",
-            ""
-        )
-
-        return f"""
-                Title:
-                {title}
-                
-                Description:
-                {description}
-                """
-
 
 if st.button("Summarize"):
 
-    if not groq_api_key:
-        st.error("Enter GROQ API Key")
+    if not groq_api_key.strip():
+        st.error("Please enter GROQ API Key")
+        st.stop()
+
+    if not generic_url.strip():
+        st.error("Please enter URL")
         st.stop()
 
     if not validators.url(generic_url):
@@ -101,6 +72,7 @@ if st.button("Summarize"):
             )
 
             docs = []
+
             if (
                 "youtube.com" in generic_url
                 or "youtu.be" in generic_url
@@ -116,42 +88,65 @@ if st.button("Summarize"):
 
                     docs = loader.load()
 
-                except:
+                except Exception as transcript_error:
 
                     st.warning(
-                        "Transcript unavailable. Using description..."
+                        "Transcript unavailable. Using video description..."
                     )
 
-                    text = get_youtube_description(
-                        generic_url
-                    )
+                    try:
 
-                    docs = [
-                        Document(
-                            page_content=text
+                        yt = YouTube(generic_url)
+
+                        text = f"""
+                                Title:
+                                {yt.title}
+                                
+                                Description:
+                                {yt.description}
+                                """
+
+                        docs = [
+                            Document(
+                                page_content=text
+                            )
+                        ]
+
+                    except Exception:
+
+                        st.error(
+                            "Unable to fetch transcript or description."
                         )
-                    ]
-                    
+
+                        st.stop()
             else:
 
                 loader = WebBaseLoader(
-                    web_paths=[generic_url]
+                    web_paths=[generic_url],
+                    requests_kwargs={
+                        "headers": {
+                            "User-Agent": "Mozilla/5.0"
+                        }
+                    }
                 )
 
                 docs = loader.load()
 
+                if not docs:
+                    st.error(
+                        "No content found on website"
+                    )
+                    st.stop()
 
             chain = load_summarize_chain(
-                llm,
+                llm=llm,
                 chain_type="stuff",
                 prompt=prompt
             )
 
-            result = chain.invoke(
-                docs
-            )
+            result = chain.invoke(docs)
 
-            output = (
+            summary = (
                 result["output_text"]
                 if isinstance(result, dict)
                 else str(result)
@@ -159,8 +154,8 @@ if st.button("Summarize"):
 
             st.success("Summary Generated")
 
-            st.write(output)
+            st.markdown(summary)
 
     except Exception as e:
 
-        st.error(str(e))
+        st.error(f"Error: {str(e)}")
