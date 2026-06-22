@@ -6,15 +6,12 @@ langchain
 langchain-community
 langchain-core
 langchain-groq
-langchain-text-splitters
 
 beautifulsoup4
 lxml
 
 youtube-transcript-api
-pytube
+yt-dlp
 
 unstructured
-huggingface_hub
-
 numexpr
